@@ -128,7 +128,7 @@
             right: 0;
             width: 50%;
             height: 100%;
-            background: url('фото в начале.png') center/cover;
+            background: url("фото%20в%20начале.png") center/cover;
             opacity: 0.1;
         }
 
@@ -1787,9 +1787,62 @@
             }
         ];
 
+        // Helpers: безопасные URL + Lazy + fallback
+        function safeSrc(path) {
+            if (!path) return path;
+            try {
+                return encodeURI(path).replace(/%5C/g, '/');
+            } catch (e) {
+                return path;
+            }
+        }
+
+        function applyImageHints(img, priority = 'low') {
+            if (!img) return;
+            img.setAttribute('decoding', 'async');
+            if (priority === 'high') {
+                img.setAttribute('fetchpriority', 'high');
+                img.removeAttribute('loading');
+            } else {
+                img.setAttribute('loading', 'lazy');
+                img.setAttribute('fetchpriority', 'low');
+            }
+        }
+
+        function addCaseInsensitiveFallback(img) {
+            if (!img) return;
+            img.addEventListener('error', function onErr() {
+                img.removeEventListener('error', onErr);
+                try {
+                    const url = new URL(img.src, window.location.href);
+                    const parts = url.pathname.split('/');
+                    const file = parts.pop();
+                    const dot = file.lastIndexOf('.');
+                    const name = dot >= 0 ? file.slice(0, dot) : file;
+                    const ext = dot >= 0 ? file.slice(dot + 1) : 'png';
+                    const candidates = [
+                        `${name.toLowerCase()}.${ext.toLowerCase()}`,
+                        `${name}.${ext.toLowerCase() === 'png' ? 'jpg' : 'png'}`,
+                        `${name.toLowerCase()}.${ext.toLowerCase() === 'png' ? 'jpg' : 'png'}`,
+                        `${name}.webp`,
+                        `${name.toLowerCase()}.webp`
+                    ];
+                    let i = 0;
+                    const tryNext = () => {
+                        if (i >= candidates.length) return;
+                        const newPath = [...parts, candidates[i++]].join('/');
+                        img.src = safeSrc(newPath);
+                        img.addEventListener('error', tryNext, { once: true });
+                    };
+                    tryNext();
+                } catch (e) {}
+            });
+        }
+
         let currentProject = 0;
         let currentModalImage = 0;
         let currentProjectImages = [];
+        let isHighResLoaded = false; // модалка: подмена на full только при зуме
         
         // Zoom and drag variables
         let currentZoom = 1;
@@ -1874,7 +1927,10 @@
             // Update main project content
             const mainProjectImage = document.getElementById('mainProjectImage');
             if (project.images[0] && project.images[0].src) {
-                mainProjectImage.innerHTML = `<img src="${project.images[0].src}" alt="${project.title}" style="width: 100%; height: 100%; object-fit: cover;" />`;
+                const encodedSrc = safeSrc(project.images[0].src);
+                mainProjectImage.innerHTML = `<img src="${encodedSrc}" alt="${project.title}" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy" decoding="async" fetchpriority="low" />`;
+                const injected = mainProjectImage.querySelector('img');
+                addCaseInsensitiveFallback(injected);
             } else {
                 mainProjectImage.textContent = project.icon;
             }
@@ -1908,7 +1964,17 @@
                 
                 const imageContainer = clickedSideProject.querySelector('.project-image-small');
                 if (oldProject.images[0] && oldProject.images[0].src) {
-                    imageContainer.innerHTML = `<img src="${oldProject.images[0].src}" alt="${oldProject.title}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;" />`;
+                    const img = document.createElement('img');
+                    img.src = safeSrc(oldProject.images[0].src);
+                    img.alt = oldProject.title;
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'cover';
+                    img.style.borderRadius = '12px';
+                    applyImageHints(img, 'low');
+                    addCaseInsensitiveFallback(img);
+                    imageContainer.innerHTML = '';
+                    imageContainer.appendChild(img);
                 } else {
                     imageContainer.innerHTML = '';
                     imageContainer.textContent = oldProject.icon;
@@ -1931,7 +1997,17 @@
                     
                     const imageContainer = project.querySelector('.project-image-small');
                     if (projectData.images[0] && projectData.images[0].src) {
-                        imageContainer.innerHTML = `<img src="${projectData.images[0].src}" alt="${projectData.title}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;" />`;
+                        const img = document.createElement('img');
+                        img.src = safeSrc(projectData.images[0].src);
+                        img.alt = projectData.title;
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'cover';
+                        img.style.borderRadius = '12px';
+                        applyImageHints(img, 'low');
+                        addCaseInsensitiveFallback(img);
+                        imageContainer.innerHTML = '';
+                        imageContainer.appendChild(img);
                     } else {
                         imageContainer.innerHTML = '';
                         imageContainer.textContent = projectData.icon;
@@ -1949,8 +2025,12 @@
             // Update main image
             const mainImg = mainGalleryImage.querySelector('.gallery-main-img');
             if (images[0].src) {
-                mainImg.src = images[0].src;
+                mainImg.src = safeSrc(images[0].src);
                 mainImg.style.display = 'block';
+                mainImg.setAttribute('decoding','async');
+                mainImg.setAttribute('loading','lazy');
+                mainImg.setAttribute('fetchpriority','low');
+                addCaseInsensitiveFallback(mainImg);
                 const placeholder = mainGalleryImage.querySelector('.image-placeholder');
                 if (placeholder) placeholder.style.display = 'none';
             } else {
@@ -1978,7 +2058,16 @@
                 thumb.setAttribute('data-image', index);
                 
                 if (image.src) {
-                    thumb.innerHTML = `<img src="${image.src}" alt="${image.label}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 6px;" />`;
+                    const timg = document.createElement('img');
+                    timg.src = safeSrc(image.src);
+                    timg.alt = image.label;
+                    timg.style.width = '100%';
+                    timg.style.height = '100%';
+                    timg.style.objectFit = 'cover';
+                    timg.style.borderRadius = '6px';
+                    applyImageHints(timg, 'low');
+                    addCaseInsensitiveFallback(timg);
+                    thumb.appendChild(timg);
                 } else {
                     thumb.innerHTML = `<div class="image-placeholder">${image.icon}</div>`;
                 }
@@ -1999,7 +2088,7 @@
             const mainImg = mainGalleryImage.querySelector('.gallery-main-img');
             
             if (image.src) {
-                mainImg.src = image.src;
+                mainImg.src = safeSrc(image.src);
                 mainImg.style.display = 'block';
                 const placeholder = mainGalleryImage.querySelector('.image-placeholder');
                 if (placeholder) placeholder.style.display = 'none';
@@ -2029,6 +2118,7 @@
         function openImageModal(imageIndex) {
             currentModalImage = imageIndex;
             currentProjectImages = projectsData[currentProject].images;
+            isHighResLoaded = false;
             
             const modal = document.getElementById('imageModal');
             modal.classList.add('active');
@@ -2051,21 +2141,22 @@
             const modalCounter = document.getElementById('modalCounter');
             
             if (image.src) {
-                modalRealImage.src = image.src;
+                modalRealImage.src = safeSrc(image.src);
                 modalRealImage.style.display = 'block';
+                modalRealImage.setAttribute('decoding','async');
+                modalRealImage.setAttribute('fetchpriority','high');
+                addCaseInsensitiveFallback(modalRealImage);
                 modalPlaceholder.style.display = 'none';
                 
                 // Установка реальных размеров изображения
                 modalRealImage.onload = function() {
-                    console.log('Image loaded, natural size:', this.naturalWidth, 'x', this.naturalHeight);
                     setTimeout(() => {
                         fitImageToScreen();
-                    }, 50); // Небольшая задержка для гарантии
+                    }, 50);
                 };
                 
                 // Если изображение уже загружено
                 if (modalRealImage.complete && modalRealImage.naturalWidth) {
-                    console.log('Image already loaded');
                     setTimeout(() => {
                         fitImageToScreen();
                     }, 50);
@@ -2088,6 +2179,7 @@
             
                 setTimeout(() => {
                 currentModalImage = (currentModalImage + 1) % currentProjectImages.length;
+                isHighResLoaded = false;
                 updateModalImage();
                 
                 // Reset animation
@@ -2103,6 +2195,7 @@
             
             setTimeout(() => {
                 currentModalImage = currentModalImage === 0 ? currentProjectImages.length - 1 : currentModalImage - 1;
+                isHighResLoaded = false;
                 updateModalImage();
                 
                 // Reset animation
@@ -2144,7 +2237,6 @@
             const realImage = document.getElementById('modalRealImage');
             
             if (!realImage.naturalWidth || !realImage.naturalHeight) {
-                console.log('Image not loaded yet, waiting...');
                 return;
             }
             
@@ -2156,17 +2248,12 @@
             const imageWidth = realImage.naturalWidth;
             const imageHeight = realImage.naturalHeight;
             
-            console.log('Screen:', screenWidth, 'x', screenHeight);
-            console.log('Image:', imageWidth, 'x', imageHeight);
-            
             // Вычисляем масштаб для подгонки под экран
             const scaleX = screenWidth / imageWidth;
             const scaleY = screenHeight / imageHeight;
             
             // Выбираем меньший масштаб, чтобы изображение полностью поместилось
             const optimalScale = Math.min(scaleX, scaleY, 1); // Не увеличиваем больше 100%
-            
-            console.log('Optimal scale:', optimalScale);
             
             // Устанавливаем масштаб
             currentZoom = optimalScale;
@@ -2179,7 +2266,6 @@
         function updateImageTransform() {
             const realImage = document.getElementById('modalRealImage');
             const transform = `translate(${imageX}px, ${imageY}px) scale(${currentZoom})`;
-            console.log('Transform:', transform);
             realImage.style.transform = transform;
         }
 
@@ -2191,6 +2277,17 @@
             // Cursor всегда grab для перетаскивания
             const modalImage = document.getElementById('modalImage');
             modalImage.style.cursor = 'grab';
+
+            // Подмена на full-изображение только при увеличении (если указано image.full)
+            if (currentZoom > 1.05 && !isHighResLoaded) {
+                const imgMeta = currentProjectImages[currentModalImage] || {};
+                if (imgMeta.full) {
+                    const realImage = document.getElementById('modalRealImage');
+                    realImage.src = safeSrc(imgMeta.full);
+                    addCaseInsensitiveFallback(realImage);
+                    isHighResLoaded = true;
+                }
+            }
         }
 
         function zoomIn() {
@@ -2374,6 +2471,15 @@
 
         // Initialize portfolio when DOM is loaded
         document.addEventListener('DOMContentLoaded', function() {
+            // Проставляем lazy/async и безопасные URL для всех уже существующих <img>
+            document.querySelectorAll('img').forEach((img) => {
+                const original = img.getAttribute('src');
+                if (original) img.setAttribute('src', safeSrc(original));
+                const isCritical = img.closest('.hero') || img.closest('.main-project');
+                applyImageHints(img, isCritical ? 'high' : 'low');
+                addCaseInsensitiveFallback(img);
+            });
+
             initPortfolio();
             initImageModal();
             initFallingStars();
