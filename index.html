@@ -1820,17 +1820,42 @@
                     const dot = file.lastIndexOf('.');
                     const name = dot >= 0 ? file.slice(0, dot) : file;
                     const ext = dot >= 0 ? file.slice(dot + 1) : 'png';
-                    const candidates = [
-                        `${name.toLowerCase()}.${ext.toLowerCase()}`,
-                        `${name}.${ext.toLowerCase() === 'png' ? 'jpg' : 'png'}`,
-                        `${name.toLowerCase()}.${ext.toLowerCase() === 'png' ? 'jpg' : 'png'}`,
-                        `${name}.webp`,
-                        `${name.toLowerCase()}.webp`
-                    ];
+
+                    // Папка-источник (для вариантов регистра)
+                    const folder = parts.length ? parts[parts.length - 1] : '';
+                    const folderVariants = new Set([
+                        folder,
+                        folder.toLowerCase(),
+                        folder.toUpperCase(),
+                        folder.charAt(0).toUpperCase() + folder.slice(1).toLowerCase(),
+                    ]);
+
+                    // Широкий список расширений
+                    const exts = ['webp', 'svg', 'jpg', 'jpeg', 'png'];
+
+                    const candidates = [];
+                    // 1) Текущая папка с вариантами имени/расширения
+                    exts.forEach(e => {
+                        candidates.push(`${name}.${e}`);
+                        candidates.push(`${name.toLowerCase()}.${e}`);
+                    });
+                    // 2) Варианты регистра папки
+                    const pathBeforeFolder = parts.slice(0, -1);
+                    folderVariants.forEach(fv => {
+                        exts.forEach(e => {
+                            candidates.push([...pathBeforeFolder, fv, `${name}.${e}`].join('/'));
+                            candidates.push([...pathBeforeFolder, fv, `${name.toLowerCase()}.${e}`].join('/'));
+                        });
+                    });
+
                     let i = 0;
                     const tryNext = () => {
                         if (i >= candidates.length) return;
-                        const newPath = [...parts, candidates[i++]].join('/');
+                        let newPath = candidates[i++];
+                        // Если кандидат не абсолютный, приклеим текущие parts
+                        if (!newPath.startsWith('/')) {
+                            newPath = [...parts, newPath].join('/');
+                        }
                         img.src = safeSrc(newPath);
                         img.addEventListener('error', tryNext, { once: true });
                     };
